@@ -32,7 +32,7 @@ func test_collision_object_2d_input_event():
 
 	window.add_child(collision_object)
 
-	assert_that(not collision_object.input_event_called())
+	assert_that(!collision_object.input_event_called())
 	assert_eq(collision_object.get_viewport(), null)
 
 	var event := InputEventMouseMotion.new()

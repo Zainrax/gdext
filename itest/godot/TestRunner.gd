@@ -17,7 +17,7 @@ func _ready():
 			"--disallow-focus":
 				allow_focus = false
 			_:
-				if not arg.begins_with("[") or not arg.ends_with("]"):
+				if !arg.begins_with("[") || !arg.ends_with("]"):
 					unrecognized_args.push_back(arg)
 
 				var args = arg.lstrip("[").rstrip("]").split(",")

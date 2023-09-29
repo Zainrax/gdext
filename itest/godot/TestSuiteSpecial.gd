@@ -24,7 +24,7 @@ func run_test(suite: Object, method_name: String) -> GDScriptTestRunner.GDScript
 
 	var test_case := GDScriptTestRunner.GDScriptHardcodedTestCase.new(suite, method_name)
 	test_case.execution_time_seconds = float(end_time - start_time) / 1000000.0
-	test_case.result = (result or result == null) and not _assertion_failed
+	test_case.result = (result || result == null) && !_assertion_failed
 	test_case.errors = clear_errors()
 	return test_case
 
