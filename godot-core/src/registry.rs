@@ -68,7 +68,7 @@ pub enum PluginComponent {
 
         generated_recreate_fn: Option<
             unsafe extern "C" fn(
-                p_class_userdata: *mut ::std::os::raw::c_void,
+                p_class_userdata: *mut std::ffi::c_void,
                 p_object: sys::GDExtensionObjectPtr,
             ) -> sys::GDExtensionClassInstancePtr,
         >,
@@ -308,6 +308,7 @@ fn fill_class_info(component: PluginComponent, c: &mut ClassRegistrationInfo) {
             free_fn,
         } => {
             c.parent_class_name = Some(base_class_name);
+
             fill_into(
                 &mut c.godot_params.create_instance_func,
                 generated_create_fn,
@@ -318,10 +319,16 @@ fn fill_class_info(component: PluginComponent, c: &mut ClassRegistrationInfo) {
                     c.class_name,
                 )
             );
+
+            #[cfg(before_api = "4.2")]
+            assert!(generated_recreate_fn.is_none()); // not used
+
+            #[cfg(since_api = "4.2")]
             fill_into(
                 &mut c.godot_params.recreate_instance_func,
                 generated_recreate_fn,
             );
+
             c.godot_params.free_instance_func = Some(free_fn);
         }
 
@@ -343,7 +350,13 @@ fn fill_class_info(component: PluginComponent, c: &mut ClassRegistrationInfo) {
             // this shouldn't panic since rustc will error if there's
             // multiple `impl {Class}Virtual for Thing` definitions
             fill_into(&mut c.godot_params.create_instance_func, user_create_fn).unwrap();
+
+            #[cfg(before_api = "4.2")]
+            assert!(user_recreate_fn.is_none()); // not used
+
+            #[cfg(since_api = "4.2")]
             fill_into(&mut c.godot_params.recreate_instance_func, user_recreate_fn);
+
             c.godot_params.to_string_func = user_to_string_fn;
             c.godot_params.notification_func = user_on_notification_fn;
             c.godot_params.get_virtual_func = Some(get_virtual_fn);
