@@ -244,8 +244,8 @@ pub fn auto_register_classes(init_level: InitLevel) {
         fill_class_info(elem.component.clone(), class_info);
     });
 
-    let mut loaded_classes = get_loaded_classes_with_mutex();
-    let loaded_classes = loaded_classes.get_or_insert_with(Default::default);
+    let mut loaded_classes_guard = get_loaded_classes_with_mutex();
+    let loaded_classes_by_level = loaded_classes_guard.get_or_insert_with(HashMap::default);
 
     for info in map.into_values() {
         out!(
@@ -253,7 +253,7 @@ pub fn auto_register_classes(init_level: InitLevel) {
             info.class_name
         );
         let class_name = info.class_name;
-        loaded_classes
+        loaded_classes_by_level
             .entry(init_level)
             .or_default()
             .push(info.class_name);
@@ -266,20 +266,14 @@ pub fn auto_register_classes(init_level: InitLevel) {
 }
 
 pub fn unregister_classes(init_level: InitLevel) {
-    let mut loaded_classes = get_loaded_classes_with_mutex();
-    let loaded_classes = loaded_classes.get_or_insert_with(Default::default);
-    let loaded_classes = loaded_classes.remove(&init_level).unwrap_or_default();
+    let mut loaded_classes_guard = get_loaded_classes_with_mutex();
+    let loaded_classes_by_level = loaded_classes_guard.get_or_insert_with(HashMap::default);
+    let loaded_classes_current_level = loaded_classes_by_level
+        .remove(&init_level)
+        .unwrap_or_default();
     out!("Unregistering classes of level {init_level:?}...");
-    for class_name in loaded_classes.iter().rev() {
-        out!("Unregister class: {class_name} at level `{init_level:?}`");
-        unsafe {
-            #[allow(clippy::let_unit_value)]
-            let _: () = interface_fn!(classdb_unregister_extension_class)(
-                sys::get_library(),
-                class_name.string_sys(),
-            );
-        }
-        godot_print!("Class {class_name} unloaded");
+    for class_name in loaded_classes_current_level.iter().rev() {
+        unregister_class_raw(class_name);
     }
 }
 
@@ -320,14 +314,20 @@ fn fill_class_info(component: PluginComponent, c: &mut ClassRegistrationInfo) {
                 )
             );
 
-            #[cfg(before_api = "4.2")]
-            assert!(generated_recreate_fn.is_none()); // not used
-
             #[cfg(since_api = "4.2")]
             fill_into(
                 &mut c.godot_params.recreate_instance_func,
                 generated_recreate_fn,
+            )
+            .unwrap_or_else(|_|
+                panic!(
+                    "Godot class `{}` is defined multiple times in Rust; you can rename them with #[class(rename=NewName)]",
+                    c.class_name,
+                )
             );
+
+            #[cfg(before_api = "4.2")]
+            assert!(generated_recreate_fn.is_none()); // not used
 
             c.godot_params.free_instance_func = Some(free_fn);
         }
@@ -347,15 +347,17 @@ fn fill_class_info(component: PluginComponent, c: &mut ClassRegistrationInfo) {
             get_virtual_fn,
         } => {
             c.user_register_fn = user_register_fn;
-            // this shouldn't panic since rustc will error if there's
+
+            // following unwraps of fill_into shouldn't panic since rustc will error if there's
             // multiple `impl {Class}Virtual for Thing` definitions
+
             fill_into(&mut c.godot_params.create_instance_func, user_create_fn).unwrap();
+
+            #[cfg(since_api = "4.2")]
+            fill_into(&mut c.godot_params.recreate_instance_func, user_recreate_fn).unwrap();
 
             #[cfg(before_api = "4.2")]
             assert!(user_recreate_fn.is_none()); // not used
-
-            #[cfg(since_api = "4.2")]
-            fill_into(&mut c.godot_params.recreate_instance_func, user_recreate_fn);
 
             c.godot_params.to_string_func = user_to_string_fn;
             c.godot_params.notification_func = user_on_notification_fn;
@@ -441,6 +443,18 @@ fn register_class_raw(info: ClassRegistrationInfo) {
     }
     #[cfg(before_api = "4.1")]
     assert!(!info.is_editor_plugin);
+}
+
+fn unregister_class_raw(class_name: &ClassName) {
+    out!("Unregister class: {class_name}");
+    unsafe {
+        #[allow(clippy::let_unit_value)]
+        let _: () = interface_fn!(classdb_unregister_extension_class)(
+            sys::get_library(),
+            class_name.string_sys(),
+        );
+    }
+    godot_print!("Class {class_name} unloaded");
 }
 
 /// Callbacks that are passed as function pointers to Godot upon class registration.
